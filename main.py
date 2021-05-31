@@ -171,6 +171,7 @@ def show_tasks_only(update: Update, context: CallbackContext) -> None:
 
     return CHOOSING
 
+
 def offer_to_delete(update: Update, context: CallbackContext) -> None:
     task_list = context.user_data['tasks']
     update.message.reply_text("Выберите номер вопроса, который вы хотите удалить:")
@@ -180,12 +181,19 @@ def offer_to_delete(update: Update, context: CallbackContext) -> None:
         )
     return DELETING_TASKS
 
+
 def delete_tasks(update: Update, context: CallbackContext) -> None:
-    task_list = context.user_data['tasks']
-    for i in task_list.index():
-        del context.user_data[i]
-    # del context.user_data['tasks']
+    if not update.message.text.isnumeric():
+        update.message.reply_text("Введите число (номер задачи)")
+        return CHOOSING
+    idx = int(update.message.text)
+    if idx >= len(context.user_data['tasks']) or idx < 0:
+        update.message.reply_text("Не верное число")
+        return CHOOSING
+
+    del context.user_data['tasks'][idx]
     update.message.reply_text("Удалил")
+    update.message.reply_text("Что-то еще?", reply_markup=markup)
 
     return CHOOSING
 
