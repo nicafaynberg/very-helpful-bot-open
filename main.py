@@ -17,6 +17,8 @@ import logging
 from typing import Dict
 import re
 import os
+import schedule
+import time
 
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ForceReply
 from telegram.ext import (
@@ -91,6 +93,7 @@ def received_information_text(update: Update, context: CallbackContext) -> int:
     )
     return SETTING_TIME
 
+
 def received_information_time(update: Update, context: CallbackContext) -> int:
     task_time = update.message.text
     if not re.match(r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", task_time):
@@ -108,8 +111,6 @@ def received_information_time(update: Update, context: CallbackContext) -> int:
 
     context.user_data['tasks'].append(task)
 
-    del context.user_data['text_for_upcoming_task']
-
     update.message.reply_text(
         "Ок, я буду вас спрашивать: "
         f"{task_text} в {task_time}"
@@ -118,19 +119,23 @@ def received_information_time(update: Update, context: CallbackContext) -> int:
     )
 
     def callback_minute(ctx):
-        # context.user_data['question_for_upcoming_answer'] = task_text
-        # context.bot.send_message(update.effective_user.id, text=task_text, reply_markup=ForceReply())
+        context.user_data['question_for_upcoming_answer'] = task_text
+        context.bot.send_message(update.effective_user.id, text=task_text, reply_markup=ForceReply())
 
         os.environ['TZ'] = 'Europe/Moscow'
 
     # d = datetime.time(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-        d = datetime.datetime.strptime(task_time, '%H:%M').time()
-        updater.job_queue.run_daily(callback_minute, time=d)
+    # # d = datetime.datetime.strptime(task_time, '%H:%M').time()
+    d = datetime.datetime.strptime(task_time, '%H:%M').time()
+    updater.job_queue.run_repeating(callback_minute, interval=datetime.timedelta(days=1), first=d)
+
+    del context.user_data['text_for_upcoming_task']
 
     return CHOOSING
 
+
 def set_answer(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text("Спасибо за ответ")
+    # update.message.reply_text("Спасибо за ответ")
     question_text = context.user_data['question_for_upcoming_answer']
     answer_text = update.message.text
     del context.user_data['question_for_upcoming_answer']
@@ -139,7 +144,7 @@ def set_answer(update: Update, context: CallbackContext) -> int:
         context.user_data['answers'] = []
 
     context.user_data['answers'].append({
-        "date": datetime.datetime.now().isoformat(),
+        "date": datetime.datetime.now().isoformat(sep=' '),
         "question": question_text,
         "answer": answer_text
     })
@@ -153,36 +158,39 @@ def set_answer(update: Update, context: CallbackContext) -> int:
 
     return CHOOSING
 
+
 def show_all_data(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
-        f"Вот что вы уже мне рассказали: {context.user_data}"
-    )
+    update.message.reply_text(f"Вот что вы уже мне рассказали:")
+    task_list = context.user_data['tasks']
+    answer_list = context.user_data['answers']
+    for val in answer_list:
+        update.message.reply_text(f"{val['question']} - {val['answer']}, {val['date']}")
+
     return CHOOSING
+
 
 def show_tasks_only(update: Update, context: CallbackContext) -> None:
     task_list = context.user_data['tasks']
     update.message.reply_text("Вот вопросы, которые я вам задаю:")
-    for i in enumerate(task_list):
-        update.message.reply_text(
-        f'{i}'
-        )
+    for i, val in enumerate(task_list):
+        update.message.reply_text(f"{i + 1}. {val['task']}")
 
     return CHOOSING
+
 
 def offer_to_delete(update: Update, context: CallbackContext) -> None:
     task_list = context.user_data['tasks']
     update.message.reply_text("Выберите номер вопроса, который вы хотите удалить:")
-    for i in enumerate(task_list):
-        update.message.reply_text(
-        f'{i}'
-        )
+    for i, val in enumerate(task_list):
+        update.message.reply_text(f"{i + 1}. {val['task']} - {val['time']}")
     return DELETING_TASKS
+
 
 def delete_tasks(update: Update, context: CallbackContext) -> None:
     if not update.message.text.isnumeric():
         update.message.reply_text("Введите число (номер задачи)")
         return DELETING_TASKS
-    idx = int(update.message.text)
+    idx = int(update.message.text) - 1
     if idx >= len(context.user_data['tasks']) or idx < 0:
         update.message.reply_text("Неверное число")
         return DELETING_TASKS
@@ -193,15 +201,16 @@ def delete_tasks(update: Update, context: CallbackContext) -> None:
 
     return CHOOSING
 
+
 def done(update: Update, context: CallbackContext) -> int:
     # if 'choice' in context.user_data:
     #     del context.user_data['choice']
-        update.message.reply_text(
-            # "Вот что я о вас узнал:" f"{facts_to_str(context.user_data)} До следующей встречи!",
+    update.message.reply_text(
+        # "Вот что я о вас узнал:" f"{facts_to_str(context.user_data)} До следующей встречи!",
         "До следующей встречи!",
         reply_markup=ReplyKeyboardRemove()
-        )
-        return ConversationHandler.END
+    )
+    return ConversationHandler.END
 
 
 with open(getenv('FIREBASE_CREDENTIALS_FILE')) as json_file:
