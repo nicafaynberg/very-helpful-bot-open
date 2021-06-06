@@ -124,10 +124,11 @@ def received_information_time(update: Update, context: CallbackContext) -> int:
 
         os.environ['TZ'] = 'Europe/Moscow'
 
-    # d = datetime.time(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    d = datetime.time(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    updater.job_queue.run_once(callback_minute, when=5)
     # # d = datetime.datetime.strptime(task_time, '%H:%M').time()
-    d = datetime.datetime.strptime(task_time, '%H:%M').time()
-    updater.job_queue.run_repeating(callback_minute, interval=datetime.timedelta(days=1), first=d)
+    # d = datetime.datetime.strptime(task_time, '%H:%M').time()
+    # updater.job_queue.run_repeating(callback_minute, interval=datetime.timedelta(days=1), first=d)
 
     del context.user_data['text_for_upcoming_task']
 
@@ -144,7 +145,7 @@ def set_answer(update: Update, context: CallbackContext) -> int:
         context.user_data['answers'] = []
 
     context.user_data['answers'].append({
-        "date": datetime.datetime.now().isoformat(sep=' '),
+        "date": datetime.datetime.now().isoformat(),
         "question": question_text,
         "answer": answer_text
     })
@@ -159,13 +160,14 @@ def set_answer(update: Update, context: CallbackContext) -> int:
     return CHOOSING
 
 
-def show_all_data(update: Update, context: CallbackContext) -> None:
+def show_all_data(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(f"Вот что вы уже мне рассказали:")
     task_list = context.user_data['tasks']
     answer_list = context.user_data['answers']
     for val in answer_list:
         update.message.reply_text(f"{val['question']} - {val['answer']}, {val['date']}")
 
+    print(context.user_data)
     return CHOOSING
 
 
@@ -232,16 +234,17 @@ def download_answers(update: Update, context: CallbackContext):
     for idx, task in enumerate(context.user_data['tasks']):
         row_index = idx + 1
         if 'date' in task:
-            worksheet.write(f'A{row_index}', task['date'])
+            worksheet.write(f'A{row_index + 1}', task['date'])
         if 'question' in task:
-            worksheet.write(f'B{row_index}', task['question'])
+            worksheet.write(f'B{row_index + 1}', task['question'])
         if 'answer' in task:
-            worksheet.write(f'C{row_index}', task['answer'])
+            worksheet.write(f'C{row_index + 1}', task['answer'])
     workbook.close()
 
     with open(fname, 'rb') as file:
         context.bot.sendDocument(user_id, document=file, reply_markup=markup)
     os.remove(fname)
+    print(task)
     return CHOOSING
 
 
@@ -307,3 +310,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
