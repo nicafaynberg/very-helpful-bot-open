@@ -19,7 +19,7 @@ import re
 import os
 import schedule
 import time
-
+from pytz import timezone
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ForceReply
 from telegram.ext import (
     Updater,
@@ -122,13 +122,16 @@ def received_information_time(update: Update, context: CallbackContext) -> int:
         context.user_data['question_for_upcoming_answer'] = task_text
         context.bot.send_message(update.effective_user.id, text=task_text, reply_markup=ForceReply())
 
-        os.environ['TZ'] = 'Europe/Moscow'
-
-    d = datetime.time(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-    updater.job_queue.run_once(callback_minute, when=5)
-    # # d = datetime.datetime.strptime(task_time, '%H:%M').time()
+    os.environ['TZ'] = 'Europe/Moscow'
+    [hour, minute] = task_time.split(':')
+    tz = timezone('Europe/Moscow')
+    d = datetime.time(hour=int(hour), minute=int(minute), second=0, microsecond=0, tzinfo=tz)
+    # updater.job_queue.run_once(callback_minute, when=5)
     # d = datetime.datetime.strptime(task_time, '%H:%M').time()
-    # updater.job_queue.run_repeating(callback_minute, interval=datetime.timedelta(days=1), first=d)
+    print("Time")
+    print(d)
+    updater.job_queue.run_daily(callback_minute, time=d)
+    # updater.dispatcher.add_handler(MessageHandler(task_time, callback_minute, pass_job_queue=True))
 
     del context.user_data['text_for_upcoming_task']
 
@@ -145,7 +148,7 @@ def set_answer(update: Update, context: CallbackContext) -> int:
         context.user_data['answers'] = []
 
     context.user_data['answers'].append({
-        "date": datetime.datetime.now().isoformat(),
+        "date": datetime.datetime.now().replace(microsecond=0).isoformat(' '),
         "question": question_text,
         "answer": answer_text
     })
@@ -155,7 +158,7 @@ def set_answer(update: Update, context: CallbackContext) -> int:
     на вопрос
     {question_text}
     Отлично, до встречи!
-    """)
+    """, reply_markup=markup)
 
     return CHOOSING
 
@@ -164,8 +167,8 @@ def show_all_data(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(f"Вот что вы уже мне рассказали:")
     task_list = context.user_data['tasks']
     answer_list = context.user_data['answers']
-    for val in answer_list:
-        update.message.reply_text(f"{val['question']} - {val['answer']}, {val['date']}")
+    for i, val in enumerate(answer_list):
+        update.message.reply_text(f"{i + 1}.{val['question']} - {val['answer']}, {val['date']}", reply_markup=markup)
 
     print(context.user_data)
     return CHOOSING
@@ -175,7 +178,7 @@ def show_tasks_only(update: Update, context: CallbackContext) -> None:
     task_list = context.user_data['tasks']
     update.message.reply_text("Вот вопросы, которые я вам задаю:")
     for i, val in enumerate(task_list):
-        update.message.reply_text(f"{i + 1}. {val['task']}")
+        update.message.reply_text(f"{i + 1}. {val['task']}", reply_markup=markup)
 
     return CHOOSING
 
@@ -184,7 +187,7 @@ def offer_to_delete(update: Update, context: CallbackContext) -> None:
     task_list = context.user_data['tasks']
     update.message.reply_text("Выберите номер вопроса, который вы хотите удалить:")
     for i, val in enumerate(task_list):
-        update.message.reply_text(f"{i + 1}. {val['task']} - {val['time']}")
+        update.message.reply_text(f"{i + 1}. {val['task']} - {val['time']}", reply_markup=markup)
     return DELETING_TASKS
 
 
@@ -194,7 +197,7 @@ def delete_tasks(update: Update, context: CallbackContext) -> None:
         return DELETING_TASKS
     idx = int(update.message.text) - 1
     if idx >= len(context.user_data['tasks']) or idx < 0:
-        update.message.reply_text("Неверное число")
+        update.message.reply_text("Упс, такого номера в списке нет", reply_markup=markup)
         return DELETING_TASKS
 
     del context.user_data['tasks'][idx]
@@ -210,9 +213,8 @@ def done(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(
         # "Вот что я о вас узнал:" f"{facts_to_str(context.user_data)} До следующей встречи!",
         "До следующей встречи!",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    return ConversationHandler.END
+        reply_markup=markup)
+    return CHOOSING
 
 
 with open(getenv('FIREBASE_CREDENTIALS_FILE')) as json_file:
@@ -228,10 +230,10 @@ def download_answers(update: Update, context: CallbackContext):
     bold = workbook.add_format({'bold': True})
     worksheet.write('A1', 'Дата и время ответа', bold)
     worksheet.write('B1', 'Вопрос', bold)
-    worksheet.write('C1', 'Время задавания вопроса', bold)
-    worksheet.write('D1', 'Ответ', bold)
+    # worksheet.write('C1', 'Время задавания вопроса', bold)
+    worksheet.write('C1', 'Ответ', bold)
 
-    for idx, task in enumerate(context.user_data['tasks']):
+    for idx, task in enumerate(context.user_data['answers']):
         row_index = idx + 1
         if 'date' in task:
             worksheet.write(f'A{row_index + 1}', task['date'])
@@ -263,6 +265,7 @@ def main() -> None:
         states={
             CHOOSING: [
                 MessageHandler(Filters.regex(f'^{SET_TASK_TEXT}$'), set_task_choice),
+                MessageHandler(Filters.reply, set_answer),
                 MessageHandler(Filters.regex(f'^{SHOW_ALL_DATA}$'), show_all_data),
                 MessageHandler(Filters.regex(f'^{SHOW_MY_TASKS_TEXT}$'), show_tasks_only),
                 MessageHandler(Filters.regex(f'^{DOWNLOAD_ANSWERS_TEXT}$'), download_answers),
@@ -301,6 +304,7 @@ def main() -> None:
 
     show_all_data_handler = CommandHandler('show_all_data', show_all_data)
     dispatcher.add_handler(show_all_data_handler)
+
 
     # Start the Bot
     updater.start_polling()
