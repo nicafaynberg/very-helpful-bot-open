@@ -58,7 +58,7 @@ GOODBYE = "На этом все"
 reply_keyboard = [
     [SET_TASK_TEXT, SHOW_MY_TASKS_TEXT, DOWNLOAD_ANSWERS_TEXT, SHOW_ALL_DATA, DELETE_TASK, GOODBYE]
 ]
-markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
+markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=False, resize_keyboard=True)
 updater = None
 
 
@@ -144,11 +144,13 @@ def set_answer(update: Update, context: CallbackContext) -> int:
     answer_text = update.message.text
     del context.user_data['question_for_upcoming_answer']
 
+    os.environ['TZ'] = 'Europe/Moscow'
+    tzone = timezone('Europe/Moscow')
     if 'answers' not in context.user_data:
         context.user_data['answers'] = []
 
     context.user_data['answers'].append({
-        "date": datetime.datetime.now().replace(microsecond=0).isoformat(' '),
+        "date": datetime.datetime.now(tz=tzone).replace(microsecond=0).isoformat(' '),
         "question": question_text,
         "answer": answer_text
     })
@@ -164,11 +166,17 @@ def set_answer(update: Update, context: CallbackContext) -> int:
 
 
 def show_all_data(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text(f"Вот что вы уже мне рассказали:")
     task_list = context.user_data['tasks']
     answer_list = context.user_data['answers']
-    for i, val in enumerate(answer_list):
-        update.message.reply_text(f"{i + 1}.{val['question']} - {val['answer']}, {val['date']}", reply_markup=markup)
+    if len(answer_list) == 0:
+        update.message.reply_text(
+            "Вы пока на что мне не ответили",
+        )
+        return CHOOSING
+    else:
+        update.message.reply_text(f"Вот что вы уже мне рассказали:")
+        for i, val in enumerate(answer_list):
+            update.message.reply_text(f"{i + 1}.{val['question']} - {val['answer']}, {val['date']}", reply_markup=markup)
 
     print(context.user_data)
     return CHOOSING
